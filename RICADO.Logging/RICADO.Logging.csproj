@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net5.0</TargetFramework>
+    <Authors>RICADO Group</Authors>
+    <Company>RICADO Group LP</Company>
+    <Description>A Logging Provider for .NET 5 Applications</Description>
+    <Copyright>Copyright © RICADO Group LP 2009 - 2020</Copyright>
+    <RepositoryUrl>https://github.com/ricado-group/dotnet-logging</RepositoryUrl>
+    <PackageIcon>packageIcon.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="packageIcon.png">
+      <Pack>True</Pack>
+      <PackagePath></PackagePath>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Bugsnag" Version="2.2.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="5.0.0" />
+  </ItemGroup>
+
+</Project>
