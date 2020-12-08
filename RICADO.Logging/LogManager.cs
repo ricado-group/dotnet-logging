@@ -1,7 +1,7 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Bugsnag;
 
@@ -99,7 +99,7 @@ namespace RICADO.Logging
 
         #region Public Methods
 
-        public static void Initialize(string logLevel, string environment, string projectRoot, Version appVersion)
+        public static void Initialize(string logLevel, string environment, string projectRoot)
         {
             lock(_initializedLock)
             {
@@ -113,14 +113,14 @@ namespace RICADO.Logging
 
                     if (Enum.TryParse<LogLevel>(logLevel, true, out enumLogLevel) == false)
                     {
-                        Logger.LogWarning("Initialized using 'Information' Log Level. Unable to interpret provided Log Level '" + logLevel + "'");
+                        Logger.LogWarning("Initialized using Default *Information* Log Level. Unable to interpret provided Log Level '" + logLevel + "'");
                     }
 
                     Logger.LogLevel = enumLogLevel;
 
                     BugsnagConfiguration = new Configuration();
 
-                    //BugsnagConfiguration.AppType = "";
+                    Version appVersion = Assembly.GetEntryAssembly().GetName().Version;
 
                     if (appVersion != null)
                     {
@@ -202,6 +202,30 @@ namespace RICADO.Logging
             updateBugsnagClient();
         }
 
+        public static void AddBugsnagIgnoredClass(Type classType)
+        {
+            if (classType == null || classType == typeof(Logger) || classType == typeof(LogManager))
+            {
+                return;
+            }
+
+            if (BugsnagConfiguration.IgnoreClasses == null)
+            {
+                BugsnagConfiguration.IgnoreClasses = new Type[] { };
+            }
+
+            List<Type> ignoreClassTypes = BugsnagConfiguration.IgnoreClasses.ToList<Type>();
+
+            if (ignoreClassTypes.Contains(classType) == false)
+            {
+                ignoreClassTypes.Add(classType);
+            }
+
+            BugsnagConfiguration.IgnoreClasses = ignoreClassTypes.ToArray();
+
+            updateBugsnagClient();
+        }
+
         public static void Destroy()
         {
             System.Threading.Tasks.TaskScheduler.UnobservedTaskException -= taskSchedulerUnobservedTaskException;
@@ -237,9 +261,28 @@ namespace RICADO.Logging
         {
             if (e != null)
             {
-                Logger.LogCritical(e.Exception, "Task Scheduler Unhandled Exception");
-
-                e.SetObserved();
+                try
+                {
+                    if(HasConfiguredBugsnagClient == true)
+                    {
+                        lock(_bugsnagClientLock)
+                        {
+                            _bugsnagClient.Notify(e.Exception, Bugsnag.Payload.HandledState.ForUnhandledException());
+                        }
+                    }
+                    else
+                    {
+                        Logger.LogCritical(e.Exception, "Task Scheduler Unhandled Exception");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex);
+                }
+                finally
+                {
+                    e.SetObserved();
+                }
             }
         }
 

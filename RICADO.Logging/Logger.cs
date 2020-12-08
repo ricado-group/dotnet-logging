@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.IO;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
 namespace RICADO.Logging
@@ -47,6 +49,11 @@ namespace RICADO.Logging
             log(LogLevel.Trace, null, message, args);
         }
 
+        public static void LogTrace(Exception exception, params object[] args)
+        {
+            log(LogLevel.Trace, exception, null, args);
+        }
+
         public static void LogDebug(Exception exception, string message, params object[] args)
         {
             log(LogLevel.Debug, exception, message, args);
@@ -55,6 +62,11 @@ namespace RICADO.Logging
         public static void LogDebug(string message, params object[] args)
         {
             log(LogLevel.Debug, null, message, args);
+        }
+
+        public static void LogDebug(Exception exception, params object[] args)
+        {
+            log(LogLevel.Debug, exception, null, args);
         }
 
         public static void LogInformation(Exception exception, string message, params object[] args)
@@ -67,6 +79,11 @@ namespace RICADO.Logging
             log(LogLevel.Information, null, message, args);
         }
 
+        public static void LogInformation(Exception exception, params object[] args)
+        {
+            log(LogLevel.Information, exception, null, args);
+        }
+
         public static void LogWarning(Exception exception, string message, params object[] args)
         {
             log(LogLevel.Warning, exception, message, args);
@@ -75,6 +92,11 @@ namespace RICADO.Logging
         public static void LogWarning(string message, params object[] args)
         {
             log(LogLevel.Warning, null, message, args);
+        }
+
+        public static void LogWarning(Exception exception, params object[] args)
+        {
+            log(LogLevel.Warning, exception, null, args);
         }
 
         public static void LogError(Exception exception, string message, params object[] args)
@@ -87,6 +109,11 @@ namespace RICADO.Logging
             log(LogLevel.Error, null, message, args);
         }
 
+        public static void LogError(Exception exception, params object[] args)
+        {
+            log(LogLevel.Error, exception, null, args);
+        }
+
         public static void LogCritical(Exception exception, string message, params object[] args)
         {
             log(LogLevel.Critical, exception, message, args);
@@ -97,93 +124,10 @@ namespace RICADO.Logging
             log(LogLevel.Critical, null, message, args);
         }
 
-        /*public static void LogException(Exception e)
+        public static void LogCritical(Exception exception, params object[] args)
         {
-            bool sendLog = true;
-
-            try
-            {
-                if (e != null)
-                {
-                    StackTrace callingStackTrace = new StackTrace();
-
-                    StackTrace stack = new StackTrace(e);
-                    string message = "Exception: " + e.Message + " :: ";
-
-                    message += "Stack Trace: ";
-
-                    int stackCount = 0;
-
-                    foreach (StackFrame stackFrame in stack.GetFrames().Reverse())
-                    {
-                        MethodBase method = stackFrame.GetMethod();
-
-                        if (method != null)
-                        {
-                            message += method.DeclaringType.FullName.Replace('+', '.');
-                            message += ".";
-                            message += method.Name;
-                            message += "(";
-
-                            bool addComma = true;
-                            ParameterInfo[] parameters = method.GetParameters();
-
-                            for (int i = 0; i < parameters.Length; i++)
-                            {
-                                if (addComma == false)
-                                {
-                                    message += ", ";
-                                }
-                                else
-                                {
-                                    addComma = false;
-                                }
-
-                                string name = "<UnknownType>";
-
-                                if (parameters[i].ParameterType != null)
-                                {
-                                    name = parameters[i].ParameterType.Name;
-                                }
-
-                                message += name + " " + parameters[i].Name;
-                            }
-
-                            message += ")";
-
-                            if (stackCount < (stack.GetFrames().Count() - 1))
-                            {
-                                message += " -> ";
-                            }
-
-                            stackCount++;
-                        }
-                    }
-
-                    sendLog = Log(getStackFirstClassName(callingStackTrace), getStackFirstMethodName(callingStackTrace), message, enLoggingLevel.Exception);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("UNKNOWN CLASS", "UNKNOWN METHOD", e.Message, enLoggingLevel.Exception);
-
-                Log("LogWriter", "LogException", "Prior Exception Log caused an Exception to be thrown. Suggest Exception has Null Properties for Class / Method.", enLoggingLevel.Error);
-            }
-
-            if (sendLog == true)
-            {
-                try
-                {
-                    if (BugsnagClient != null)
-                    {
-                        BugsnagClient.Notify(e, Severity.Error);
-                    }
-                }
-                catch
-                {
-                }
-            }
-        }*/
+            log(LogLevel.Critical, exception, null, args);
+        }
 
         #endregion
 
@@ -203,7 +147,7 @@ namespace RICADO.Logging
             {
                 if(args.Length > 0 && message.Contains('{') && message.Contains('}'))
                 {
-                    // TODO: Expand the Message Arguments
+                    message = buildMessageWithArguments(message, args);
                 }
 
                 messageBuilder.Append(message);
@@ -213,11 +157,10 @@ namespace RICADO.Logging
             {
                 if(messageBuilder.Length > 0)
                 {
-                    messageBuilder.Append(Environment.NewLine);
+                    messageBuilder.Append(Environment.NewLine + Environment.NewLine);
                 }
 
-                // TODO: Improve the Exception Logging
-                messageBuilder.Append(exception.ToString());
+                messageBuilder.Append(getExceptionMessageContent(exception));
             }
 
             if(messageBuilder.Length == 0)
@@ -238,8 +181,7 @@ namespace RICADO.Logging
 
             TextWriter textWriter = logLevel == LogLevel.Error || logLevel == LogLevel.Critical ? Console.Error : Console.Out;
 
-            // TODO: Improve Timestamp String (consider ISO format)
-            textWriter.WriteLine("[{0}] {1} -> {2} :: {3} :: {4}", DateTime.Now.ToString("G"), className, methodName, getLogLevelString(logLevel), messageBuilder.ToString());
+            textWriter.WriteLine("[{0}] {1} -> {2} :: {3} :: {4}", DateTime.Now.ToString("s"), className, methodName, getLogLevelString(logLevel), messageBuilder.ToString());
 
             trackLogMessage(messageBuilder.ToString(), logLevel, className, methodName);
 
@@ -250,29 +192,28 @@ namespace RICADO.Logging
 
             try
             {
-                if (logLevel == LogLevel.Information)
+                if (message != null && message.Length > 0 && logLevel >= LogLevel.Information && logLevel != LogLevel.None)
                 {
-                    LogManager.BugsnagClient.Breadcrumbs.Leave(message);
+                    Dictionary<string, string> breadcrumbMetadata = new Dictionary<string, string>();
 
-                    if (exception != null)
+                    breadcrumbMetadata.Add("message", message);
+                    breadcrumbMetadata.Add("className", className);
+                    breadcrumbMetadata.Add("methodName", methodName);
+
+                    LogManager.BugsnagClient.Breadcrumbs.Leave("LogLevel." + logLevel.ToString(), Bugsnag.BreadcrumbType.Log, breadcrumbMetadata);
+                }
+
+                if (exception != null)
+                {
+                    if (logLevel == LogLevel.Information)
                     {
                         LogManager.BugsnagClient.Notify(exception, Bugsnag.Severity.Info);
                     }
-                }
-                else if (logLevel == LogLevel.Warning)
-                {
-                    LogManager.BugsnagClient.Breadcrumbs.Leave(message);
-
-                    if(exception != null)
+                    else if (logLevel == LogLevel.Warning)
                     {
                         LogManager.BugsnagClient.Notify(exception, Bugsnag.Severity.Warning);
                     }
-                }
-                else if (logLevel == LogLevel.Error || logLevel == LogLevel.Critical)
-                {
-                    LogManager.BugsnagClient.Breadcrumbs.Leave(message, Bugsnag.BreadcrumbType.Error, new Dictionary<string, string>());
-
-                    if (exception != null)
+                    else if (logLevel == LogLevel.Error || logLevel == LogLevel.Critical)
                     {
                         LogManager.BugsnagClient.Notify(exception, Bugsnag.Severity.Error);
                     }
@@ -439,6 +380,105 @@ namespace RICADO.Logging
             }
 
             return methodBase.Name;
+        }
+
+        private static string getExceptionMessageContent(Exception exception)
+        {
+            if(exception == null)
+            {
+                return null;
+            }
+            
+            try
+            {
+                StackTrace stackTrace = new StackTrace(exception);
+                
+                string message = "Exception: " + exception.Message + Environment.NewLine + Environment.NewLine;
+
+                message += "Stack Trace: ";
+
+                int stackCount = 0;
+
+                foreach (StackFrame stackFrame in stackTrace.GetFrames().Reverse())
+                {
+                    MethodBase method = stackFrame.GetMethod();
+
+                    if (method != null)
+                    {
+                        message += method.DeclaringType.FullName.Replace('+', '.');
+                        message += ".";
+                        message += method.Name;
+                        message += "(";
+
+                        bool addComma = true;
+                        ParameterInfo[] parameters = method.GetParameters();
+
+                        for (int i = 0; i < parameters.Length; i++)
+                        {
+                            if (addComma == false)
+                            {
+                                message += ", ";
+                            }
+                            else
+                            {
+                                addComma = false;
+                            }
+
+                            string name = "<UnknownType>";
+
+                            if (parameters[i].ParameterType != null)
+                            {
+                                name = parameters[i].ParameterType.Name;
+                            }
+
+                            message += name + " " + parameters[i].Name;
+                        }
+
+                        message += ")";
+
+                        if (stackCount < (stackTrace.GetFrames().Count() - 1))
+                        {
+                            message += " -> ";
+                        }
+
+                        stackCount++;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return exception.ToString();
+        }
+
+        private static string buildMessageWithArguments(string message, params object[] args)
+        {
+            StringBuilder builder = new StringBuilder();
+            
+            Queue<object> argumentItems = new Queue<object>(args);
+
+            foreach(string messageSegment in Regex.Split(message, "{[A-Za-z0-9]+}"))
+            {
+                if(messageSegment.Length > 0)
+                {
+                    builder.Append(messageSegment);
+                }
+
+                object argumentItem = null;
+
+                if (argumentItems.Count > 0)
+                {
+                    argumentItem = argumentItems.Dequeue();
+                }
+
+                if (argumentItem != null)
+                {
+                    builder.Append(argumentItem);
+                }
+            }
+
+            return builder.ToString();
         }
 
         #endregion
