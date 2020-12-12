@@ -161,6 +161,8 @@ namespace RICADO.Logging
                 }
 
                 messageBuilder.Append(getExceptionMessageContent(exception));
+
+                messageBuilder.Append(Environment.NewLine);
             }
 
             if(messageBuilder.Length == 0)
