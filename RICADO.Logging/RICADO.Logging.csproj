@@ -9,7 +9,6 @@
     <RepositoryUrl>https://github.com/ricado-group/dotnet-logging</RepositoryUrl>
     <PackageIcon>packageIcon.png</PackageIcon>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
-    <Version>1.0.3</Version>
   </PropertyGroup>
 
   <ItemGroup>
