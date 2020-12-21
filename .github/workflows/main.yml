@@ -27,13 +27,14 @@ jobs:
       - name: Extract Environment Variables
         uses: FranzDiebold/github-env-vars-action@v2.1.0
       
-      # Step 3 - Setup .NET 5 with NuGet Authentication
-      - name: Setup .NET 5 with NuGet Authentication
+      # Step 3 - Setup .NET 5 with GitHub Packages Authentication
+      - name: Setup .NET 5 with GitHub Packages Authentication
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: '5.0.100'
+          source-url: https://nuget.pkg.github.com/ricado-group/index.json
         env:
-          NUGET_AUTH_TOKEN: ${{ secrets.NUGET_APIKEY }}
+          NUGET_AUTH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
       
       # Step 4 - Restore NuGet Packages
       - name: Restore NuGet Packages
@@ -48,22 +49,12 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: dotnet pack "${{ env.PROJECT_NAME}}/${{ env.PROJECT_NAME }}.csproj" -c Release -p:PackageVersion=${{ env.CI_REF_NAME }}
       
-      # Step 7 - Push the Package to NuGet
-      - name: Push the Package to Nuget
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        run: dotnet nuget push "${{ env.PROJECT_NAME }}/bin/Release/*.nupkg"
-      
-      # Step 8 - Setup .NET 5 with GitHub Packages Authentication
-      - name: Setup .NET 5 with GitHub Packages Authentication
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '5.0.100'
-          source-url: https://nuget.pkg.github.com/ricado-group/index.json
-        env:
-          NUGET_AUTH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
-      
-      # Step 9 - Push the Package to GitHub Packages
+      # Step 7 - Push the Package to GitHub Packages
       - name: Push the Package to GitHub Packages
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        run: dotnet nuget push "${{ env.PROJECT_NAME }}/bin/Release/*.nupkg"
+        run: dotnet nuget push "${{ env.PROJECT_NAME }}/bin/Release/*.nupkg" -k ${{ secrets.GH_ACTIONS_PAT }} -s "https://nuget.pkg.github.com/ricado-group/index.json"
+      
+      # Step 8 - Push the Package to NuGet
+      - name: Push the Package to Nuget
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: dotnet nuget push "${{ env.PROJECT_NAME }}/bin/Release/*.nupkg" -k ${{ secrets.NUGET_APIKEY }} -s "https://api.nuget.org/v3/index.json"
