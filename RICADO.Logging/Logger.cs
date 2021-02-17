@@ -183,7 +183,10 @@ namespace RICADO.Logging
 
             TextWriter textWriter = logLevel == LogLevel.Error || logLevel == LogLevel.Critical ? Console.Error : Console.Out;
 
-            textWriter.WriteLine("[{0}] {1} -> {2} :: {3} :: {4}", DateTime.Now.ToString("s"), className, methodName, getLogLevelString(logLevel), messageBuilder.ToString());
+            //textWriter.WriteLine("[{0}] {1} -> {2} :: {3} :: {4}", DateTime.Now.ToString("s"), className, methodName, getLogLevelString(logLevel), messageBuilder.ToString());
+
+            // NOTE: Intending to remove the Class Name and Method Name given that the use of Async strips anything valuable out of these!
+            textWriter.WriteLine("[{0}] {1} :: {2}", DateTime.Now.ToString("s"), getLogLevelString(logLevel), messageBuilder.ToString());
 
             trackLogMessage(messageBuilder.ToString(), logLevel, className, methodName);
 
@@ -242,6 +245,11 @@ namespace RICADO.Logging
 
         private static bool isLogMessageAllowed(string message, LogLevel logLevel, string className, string methodName)
         {
+            if(LogLevel == LogLevel.Debug)
+            {
+                return true;
+            }
+            
             string signature = getLogMessageSignature(message, logLevel, className, methodName);
 
             if (_logMessageTracking.ContainsKey(signature) == false)
@@ -274,6 +282,11 @@ namespace RICADO.Logging
 
         private static void trackLogMessage(string message, LogLevel logLevel, string className, string methodName)
         {
+            if(LogLevel == LogLevel.Debug)
+            {
+                return;
+            }
+            
             string signature = getLogMessageSignature(message, logLevel, className, methodName);
 
             LogMessageTracking tracking;
