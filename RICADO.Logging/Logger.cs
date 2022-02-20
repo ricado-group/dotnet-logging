@@ -15,7 +15,7 @@ namespace RICADO.Logging
     {
         #region Private Locals
 
-        private static ConcurrentDictionary<string, LogMessageTracking> _logMessageTracking = new ConcurrentDictionary<string, LogMessageTracking>();
+        private static readonly ConcurrentDictionary<string, LogMessageTracking> _logMessageTracking = new ConcurrentDictionary<string, LogMessageTracking>();
 
         #endregion
 
@@ -172,23 +172,16 @@ namespace RICADO.Logging
 
             StackTrace stackTrace = new StackTrace();
 
-            string className = getStackTraceClassName(stackTrace);
-
-            string methodName = getStackTraceMethodName(stackTrace);
-
-            if(isLogMessageAllowed(messageBuilder.ToString(), logLevel, className, methodName) == false)
+            if(isLogMessageAllowed(messageBuilder.ToString(), logLevel) == false)
             {
                 return;
             }
 
             TextWriter textWriter = logLevel == LogLevel.Error || logLevel == LogLevel.Critical ? Console.Error : Console.Out;
 
-            //textWriter.WriteLine("[{0}] {1} -> {2} :: {3} :: {4}", DateTime.Now.ToString("s"), className, methodName, getLogLevelString(logLevel), messageBuilder.ToString());
-
-            // NOTE: Intending to remove the Class Name and Method Name given that the use of Async strips anything valuable out of these!
             textWriter.WriteLine("[{0}] {1} :: {2}", DateTime.Now.ToString("s"), getLogLevelString(logLevel), messageBuilder.ToString());
 
-            trackLogMessage(messageBuilder.ToString(), logLevel, className, methodName);
+            trackLogMessage(messageBuilder.ToString(), logLevel);
 
             if(LogManager.HasConfiguredBugsnagClient == false)
             {
@@ -202,8 +195,6 @@ namespace RICADO.Logging
                     Dictionary<string, string> breadcrumbMetadata = new Dictionary<string, string>();
 
                     breadcrumbMetadata.Add("message", message);
-                    breadcrumbMetadata.Add("className", className);
-                    breadcrumbMetadata.Add("methodName", methodName);
 
                     LogManager.BugsnagClient.Breadcrumbs.Leave("LogLevel." + logLevel.ToString(), Bugsnag.BreadcrumbType.Log, breadcrumbMetadata);
                 }
@@ -231,26 +222,39 @@ namespace RICADO.Logging
         
         private static string getLogLevelString(LogLevel logLevel)
         {
-            return logLevel switch
+            switch(logLevel)
             {
-                LogLevel.Critical => "critical",
-                LogLevel.Debug => "debug",
-                LogLevel.Error => "error",
-                LogLevel.Information => "information",
-                LogLevel.Trace => "trace",
-                LogLevel.Warning => "warning",
-                _ => "unknown",
-            };
+                case LogLevel.Critical:
+                    return "critical";
+
+                case LogLevel.Debug:
+                    return "debug";
+
+                case LogLevel.Error:
+                    return "error";
+
+                case LogLevel.Information:
+                    return "information";
+
+                case LogLevel.Trace:
+                    return "trace";
+
+                case LogLevel.Warning:
+                    return "warning";
+
+                default:
+                    return "unknown";
+            }
         }
 
-        private static bool isLogMessageAllowed(string message, LogLevel logLevel, string className, string methodName)
+        private static bool isLogMessageAllowed(string message, LogLevel logLevel)
         {
             if(LogLevel == LogLevel.Debug)
             {
                 return true;
             }
             
-            string signature = getLogMessageSignature(message, logLevel, className, methodName);
+            string signature = getLogMessageSignature(message, logLevel);
 
             if (_logMessageTracking.ContainsKey(signature) == false)
             {
@@ -263,7 +267,7 @@ namespace RICADO.Logging
             {
                 if (DateTime.Now.Subtract(tracking.Timestamp).TotalSeconds >= 10) // TODO: Make this configurable
                 {
-                    _logMessageTracking.TryRemove(signature, out tracking);
+                    _logMessageTracking.TryRemove(signature, out _);
 
                     return true;
                 }
@@ -280,18 +284,16 @@ namespace RICADO.Logging
             return true;
         }
 
-        private static void trackLogMessage(string message, LogLevel logLevel, string className, string methodName)
+        private static void trackLogMessage(string message, LogLevel logLevel)
         {
             if(LogLevel == LogLevel.Debug)
             {
                 return;
             }
             
-            string signature = getLogMessageSignature(message, logLevel, className, methodName);
+            string signature = getLogMessageSignature(message, logLevel);
 
-            LogMessageTracking tracking;
-
-            if (_logMessageTracking.TryGetValue(signature, out tracking) == false)
+            if (_logMessageTracking.TryGetValue(signature, out LogMessageTracking tracking) == false)
             {
                 tracking = new LogMessageTracking()
                 {
@@ -309,27 +311,9 @@ namespace RICADO.Logging
             });
         }
 
-        private static string getLogMessageSignature(string message, LogLevel logLevel, string className, string methodName)
+        private static string getLogMessageSignature(string message, LogLevel logLevel)
         {
             string signature = "";
-
-            if (className != null)
-            {
-                signature += className + "-";
-            }
-            else
-            {
-                signature += "NOCLASS-";
-            }
-
-            if (methodName != null)
-            {
-                signature += methodName + "-";
-            }
-            else
-            {
-                signature += "NOMETHOD-";
-            }
 
             if (message != null)
             {
@@ -343,58 +327,6 @@ namespace RICADO.Logging
             signature += getLogLevelString(logLevel);
 
             return signature;
-        }
-
-        private static string getStackTraceClassName(StackTrace stackTrace)
-        {
-            string unknownClassName = "UnknownClass";
-
-            if (stackTrace.FrameCount < 2)
-            {
-                return unknownClassName;
-            }
-
-            StackFrame stackFrame = stackTrace.GetFrame(2);
-
-            if (stackFrame == null || stackFrame.HasMethod() == false)
-            {
-                return unknownClassName;
-            }
-
-            MethodBase methodBase = stackFrame.GetMethod();
-
-            if (methodBase == null || methodBase.DeclaringType == null || methodBase.DeclaringType.Name == null || methodBase.DeclaringType.Name.Length == 0)
-            {
-                return unknownClassName;
-            }
-
-            return methodBase.DeclaringType.Name;
-        }
-
-        private static string getStackTraceMethodName(StackTrace stackTrace)
-        {
-            string unknownMethodName = "UnknownMethod";
-
-            if (stackTrace.FrameCount < 2)
-            {
-                return unknownMethodName;
-            }
-
-            StackFrame stackFrame = stackTrace.GetFrame(2);
-
-            if (stackFrame == null || stackFrame.HasMethod() == false)
-            {
-                return unknownMethodName;
-            }
-
-            MethodBase methodBase = stackFrame.GetMethod();
-
-            if (methodBase == null || methodBase.Name == null || methodBase.Name.Length == 0)
-            {
-                return unknownMethodName;
-            }
-
-            return methodBase.Name;
         }
 
         private static string getExceptionMessageContent(Exception exception)
