@@ -7,15 +7,29 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace RICADO.Logging
 {
     public static class Logger
     {
+        #region Constants
+
+        private const int LogMessageTrackingSeconds = 10; // TODO: Make this configurable
+        private const int LogMessageTrackingRepeats = 3; // TODO: Make this configurable
+
+        // More distinct messages than this within one tracking period are logged without being tracked
+        private const int LogMessageTrackingCapacity = 10000;
+
+        #endregion
+
+
         #region Private Locals
 
         private static readonly ConcurrentDictionary<string, LogMessageTracking> _logMessageTracking = new ConcurrentDictionary<string, LogMessageTracking>();
+
+        private static long _logMessageTrackingSweepTicks;
 
         #endregion
 
@@ -265,7 +279,7 @@ namespace RICADO.Logging
 
             if (_logMessageTracking.TryGetValue(signature, out tracking))
             {
-                if (DateTime.Now.Subtract(tracking.Timestamp).TotalSeconds >= 10) // TODO: Make this configurable
+                if (hasLogMessageTrackingExpired(tracking, DateTime.UtcNow.Ticks))
                 {
                     _logMessageTracking.TryRemove(signature, out _);
 
@@ -275,7 +289,7 @@ namespace RICADO.Logging
 
             if (_logMessageTracking.TryGetValue(signature, out tracking))
             {
-                if (tracking.Count > 3) // TODO: Make this configurable
+                if (tracking.Count > LogMessageTrackingRepeats)
                 {
                     return false;
                 }
@@ -291,14 +305,22 @@ namespace RICADO.Logging
                 return;
             }
             
+            removeExpiredLogMessageTracking();
+
             string signature = getLogMessageSignature(message, logLevel);
 
             if (_logMessageTracking.TryGetValue(signature, out LogMessageTracking tracking) == false)
             {
+                // A message that is not tracked is never suppressed, so reaching the capacity only stops new suppression
+                if (_logMessageTracking.Count >= LogMessageTrackingCapacity)
+                {
+                    return;
+                }
+
                 tracking = new LogMessageTracking()
                 {
                     Signature = signature,
-                    Timestamp = DateTime.Now,
+                    Timestamp = DateTime.UtcNow,
                     Count = 0,
                 };
             }
@@ -309,6 +331,32 @@ namespace RICADO.Logging
             {
                 return tracking;
             });
+        }
+
+        private static void removeExpiredLogMessageTracking()
+        {
+            long now = DateTime.UtcNow.Ticks;
+            long sweep = Interlocked.Read(ref _logMessageTrackingSweepTicks);
+
+            // A tracked message was only ever removed when the same message was logged again, so one that never repeated
+            // stayed in memory for the life of the process. One caller in each tracking period now removes every expired message.
+            if (now < sweep || Interlocked.CompareExchange(ref _logMessageTrackingSweepTicks, now + TimeSpan.FromSeconds(LogMessageTrackingSeconds).Ticks, sweep) != sweep)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<string, LogMessageTracking> entry in _logMessageTracking)
+            {
+                if (hasLogMessageTrackingExpired(entry.Value, now))
+                {
+                    _logMessageTracking.TryRemove(entry.Key, out _);
+                }
+            }
+        }
+
+        private static bool hasLogMessageTrackingExpired(LogMessageTracking tracking, long now)
+        {
+            return now - tracking.Timestamp.Ticks >= TimeSpan.FromSeconds(LogMessageTrackingSeconds).Ticks;
         }
 
         private static string getLogMessageSignature(string message, LogLevel logLevel)
