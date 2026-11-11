@@ -29,6 +29,9 @@ namespace RICADO.Logging
 
         private static readonly ConcurrentDictionary<string, LogMessageTracking> _logMessageTracking = new ConcurrentDictionary<string, LogMessageTracking>();
 
+        // Held for every change to the tracked messages, so a caller always acts on the record it has just read
+        private static readonly object _logMessageTrackingLock = new object();
+
         private static long _logMessageTrackingSweepTicks;
 
         #endregion
@@ -275,27 +278,22 @@ namespace RICADO.Logging
                 return true;
             }
 
-            LogMessageTracking tracking;
-
-            if (_logMessageTracking.TryGetValue(signature, out tracking))
+            lock (_logMessageTrackingLock)
             {
+                if (_logMessageTracking.TryGetValue(signature, out LogMessageTracking tracking) == false)
+                {
+                    return true;
+                }
+
                 if (hasLogMessageTrackingExpired(tracking, DateTime.UtcNow.Ticks))
                 {
                     _logMessageTracking.TryRemove(signature, out _);
 
                     return true;
                 }
-            }
 
-            if (_logMessageTracking.TryGetValue(signature, out tracking))
-            {
-                if (tracking.Count > LogMessageTrackingRepeats)
-                {
-                    return false;
-                }
+                return tracking.Count <= LogMessageTrackingRepeats;
             }
-
-            return true;
         }
 
         private static void trackLogMessage(string message, LogLevel logLevel)
@@ -309,28 +307,28 @@ namespace RICADO.Logging
 
             string signature = getLogMessageSignature(message, logLevel);
 
-            if (_logMessageTracking.TryGetValue(signature, out LogMessageTracking tracking) == false)
+            lock (_logMessageTrackingLock)
             {
-                // A message that is not tracked is never suppressed, so reaching the capacity only stops new suppression
-                if (_logMessageTracking.Count >= LogMessageTrackingCapacity)
+                if (_logMessageTracking.TryGetValue(signature, out LogMessageTracking tracking) == false)
                 {
-                    return;
+                    // A message that is not tracked is never suppressed, so reaching the capacity only stops new suppression
+                    if (_logMessageTracking.Count >= LogMessageTrackingCapacity)
+                    {
+                        return;
+                    }
+
+                    tracking = new LogMessageTracking()
+                    {
+                        Signature = signature,
+                        Timestamp = DateTime.UtcNow,
+                        Count = 0,
+                    };
                 }
 
-                tracking = new LogMessageTracking()
-                {
-                    Signature = signature,
-                    Timestamp = DateTime.UtcNow,
-                    Count = 0,
-                };
+                tracking.Count++;
+
+                _logMessageTracking[signature] = tracking;
             }
-
-            tracking.Count++;
-
-            _logMessageTracking.AddOrUpdate(signature, tracking, (key, oldtracking) =>
-            {
-                return tracking;
-            });
         }
 
         private static void removeExpiredLogMessageTracking()
@@ -345,11 +343,14 @@ namespace RICADO.Logging
                 return;
             }
 
-            foreach (KeyValuePair<string, LogMessageTracking> entry in _logMessageTracking)
+            lock (_logMessageTrackingLock)
             {
-                if (hasLogMessageTrackingExpired(entry.Value, now))
+                foreach (KeyValuePair<string, LogMessageTracking> entry in _logMessageTracking)
                 {
-                    _logMessageTracking.TryRemove(entry.Key, out _);
+                    if (hasLogMessageTrackingExpired(entry.Value, now))
+                    {
+                        _logMessageTracking.TryRemove(entry.Key, out _);
+                    }
                 }
             }
         }
